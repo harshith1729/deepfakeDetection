@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+env/
+.deepfake_env/
+
+# Streamlit
+.streamlit/
+*.log
+
+# Audio temp files
+*.wav
+*.mp3
+temp/
+tmp/
+
+# ML models (add only if needed)
+*.h5
+*.pt
+*.ckpt
+
+# OS
+.DS_Store
+
+# Large datasets
+data/
+data/**
+*.npy
