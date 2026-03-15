@@ -30,3 +30,4 @@ tmp/
 data/
 data/**
 *.npy
+.env

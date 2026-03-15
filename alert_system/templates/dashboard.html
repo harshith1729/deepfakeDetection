@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>Security Dashboard</title>
+
+<style>
+
+body{
+    font-family: Arial;
+    background:#0e1117;
+    color:white;
+    margin:0;
+}
+
+.navbar{
+    background:#161b22;
+    padding:15px;
+    font-size:20px;
+}
+
+.container{
+    padding:40px;
+}
+
+.card{
+    background:#161b22;
+    padding:30px;
+    border-radius:10px;
+    margin-bottom:25px;
+    border-left:6px solid #4e8df5;
+}
+
+button{
+    padding:12px 20px;
+    border:none;
+    border-radius:6px;
+    background:#ff4b4b;
+    color:white;
+    font-size:16px;
+    cursor:pointer;
+    margin-right:10px;
+}
+
+button:hover{
+    background:#ff2c2c;
+}
+
+.config-btn{
+    background:#4e8df5;
+}
+
+.config-btn:hover{
+    background:#6fa5ff;
+}
+
+.streamlit-btn{
+    background:#00c853;
+}
+
+.streamlit-btn:hover{
+    background:#00e676;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="navbar">
+🔐 Deepfake Guard Dashboard
+</div>
+
+<div class="container">
+
+<div class="card">
+
+<h2>Voice Security System</h2>
+
+<p>Monitor deepfake attacks and security alerts.</p>
+
+<button onclick="location.href='/simulate_attack'">
+Simulate Deepfake Attack
+</button>
+
+<button class="streamlit-btn" onclick="window.open('http://localhost:8501','_blank')">
+Open Voice Detection System
+</button>
+
+</div>
+
+<div class="card">
+
+<h2>Door Configuration</h2>
+
+<p>Configure protected locations.</p>
+
+<button class="config-btn" onclick="location.href='/config'">
+Open Configuration
+</button>
+
+</div>
+
+</div>
+
+</body>
+</html>

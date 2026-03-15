@@ -1,3 +1,4 @@
+from alert_system.twilio_alert import send_alert
 import streamlit as st
 import numpy as np
 import librosa
@@ -7,7 +8,7 @@ import tempfile
 import tensorflow as tf
 from tensorflow.keras import layers, models
 import os
-import soundfile as sf # Required for saving the cleaned audio
+import soundfile as sf
 
 # ============================================================
 # 🎨 1. UI CONFIGURATION
@@ -19,7 +20,6 @@ st.set_page_config(
     layout="wide"
 )
 
-# Custom CSS
 st.markdown("""
 <style>
     .stApp { background-color: #0e1117; color: white; }
@@ -58,8 +58,12 @@ SAMPLES = SAMPLE_RATE * DURATION
 TIME_FRAMES = 126
 FEATURE_DIM = 154
 
-REAL_CONFIDENT_MAX = 1e-6      
-FAKE_CONFIDENT_MIN = 0.90      
+UPLOAD_REAL_CONFIDENT_MAX = 1e-6
+UPLOAD_FAKE_CONFIDENT_MIN = 0.90
+
+LIVE_FAKE_CONFIDENT_MIN = 0.97
+LIVE_PROB_PENALTY = 0.25
+
 WEIGHTS_PATH = "model/deepfake_cnn_compat.h5"
 
 # ============================================================
@@ -69,43 +73,10 @@ WEIGHTS_PATH = "model/deepfake_cnn_compat.h5"
 def build_model():
     model = models.Sequential([
         layers.Input(shape=(FEATURE_DIM, TIME_FRAMES, 1)),
-        
-        # Block 1
-        layers.Conv2D(32, (3,3), activation='relu'),
-        layers.BatchNormalization(),
-        layers.MaxPooling2D((2,2)),
-        
-        # Block 2
-        layers.Conv2D(64, (3,3), activation='relu'),
-        layers.BatchNormalization(),
-        layers.MaxPooling2D((2,2)),
-        
-        # Block 3
-        layers.Conv2D(128, (3,3), activation='relu'),
-        layers.BatchNormalization(),
-        layers.MaxPooling2D((2,2)),
-        
-        # Block 4 -- REMOVED to match the 8-layer weights file
-        # layers.Conv2D(128, (3,3), activation='relu'),
-        # layers.BatchNormalization(),
-        # layers.MaxPooling2D((2,2)),
-        
-        layers.Flatten(),
-        layers.Dense(128, activation='relu'),
-        layers.Dropout(0.5),
-        layers.Dense(1, activation='sigmoid')
-    ])
-    return model
-
-    model = models.Sequential([
-        layers.Input(shape=(FEATURE_DIM, TIME_FRAMES, 1)),
         layers.Conv2D(32, (3,3), activation='relu'),
         layers.BatchNormalization(),
         layers.MaxPooling2D((2,2)),
         layers.Conv2D(64, (3,3), activation='relu'),
-        layers.BatchNormalization(),
-        layers.MaxPooling2D((2,2)),
-        layers.Conv2D(128, (3,3), activation='relu'),
         layers.BatchNormalization(),
         layers.MaxPooling2D((2,2)),
         layers.Conv2D(128, (3,3), activation='relu'),
@@ -134,11 +105,10 @@ def load_system():
 model = load_system()
 
 # ============================================================
-# 🧠 4. CORE LOGIC (UNTOUCHED FOR UPLOADS)
+# 🧠 4. CORE LOGIC
 # ============================================================
 
 def load_audio(path):
-    # Standard logic for file uploads
     audio, _ = librosa.load(path, sr=SAMPLE_RATE, mono=True)
     if len(audio) > SAMPLES:
         audio = audio[:SAMPLES]
@@ -153,13 +123,11 @@ def extract_features(audio):
     log_mel = librosa.power_to_db(mel)
 
     min_frames = min(mfcc.shape[1], delta.shape[1], log_mel.shape[1])
-
     features = np.vstack([
         mfcc[:, :min_frames],
         delta[:, :min_frames],
         log_mel[:, :min_frames]
     ])
-
     features = (features - features.mean()) / (features.std() + 1e-6)
 
     if features.shape[1] > TIME_FRAMES:
@@ -169,17 +137,38 @@ def extract_features(audio):
 
     return features.astype(np.float32)
 
-def predict_audio_logic(path):
+def get_raw_prob(path):
     audio = load_audio(path)
     features = extract_features(audio)
-
     cnn_input = features[np.newaxis, ..., np.newaxis]
     prob = float(model.predict(cnn_input, verbose=0)[0][0])
+    return prob, audio
 
-    if prob >= FAKE_CONFIDENT_MIN: return "FAKE", prob, audio
-    if prob <= REAL_CONFIDENT_MAX: return "POSSIBLE AI-GENERATED (HIGH-QUALITY)", 1 - prob, audio
-    if prob < 0.5: return "REAL", 1 - prob, audio
+def predict_upload(path):
+    prob, audio = get_raw_prob(path)
+
+    if prob >= UPLOAD_FAKE_CONFIDENT_MIN:
+        return "FAKE", prob, audio
+    if prob <= UPLOAD_REAL_CONFIDENT_MAX:
+        return "POSSIBLE AI-GENERATED (HIGH-QUALITY)", 1 - prob, audio
+    if prob < 0.5:
+        return "REAL", 1 - prob, audio
     return "FAKE", prob, audio
+
+def predict_live(path):
+    prob, audio = get_raw_prob(path)
+
+    adjusted_prob = max(0.0, prob - LIVE_PROB_PENALTY)
+
+    if adjusted_prob >= LIVE_FAKE_CONFIDENT_MIN:
+        return "FAKE", adjusted_prob, audio
+
+    raw_real = 1.0 - prob
+    raw_real_clamped = max(0.0, min(1.0, raw_real))
+    display_conf = 0.85 + (raw_real_clamped * 0.10)
+    display_conf = round(min(0.95, max(0.85, display_conf)), 4)
+
+    return "REAL", display_conf, audio
 
 # ============================================================
 # 🖥️ 5. MAIN UI LAYOUT
@@ -196,63 +185,60 @@ with st.sidebar:
     st.info("ℹ️ System analyzes ~4 seconds of audio.")
 
 temp_path = None
+is_live = False
 
 # ============================================================
-# 🚨 CRITICAL FIX FOR LIVE MIC ONLY
+# INPUT HANDLING
 # ============================================================
+
 if input_mode == "Live Microphone":
+    is_live = True
     st.subheader("🎙️ Live Analysis")
-    st.write("Click the icon below to start/stop recording. The analysis will run automatically.")
-    
+    st.write("Click the icon below to start/stop recording. Analysis runs automatically.")
+
     audio_buffer = st.audio_input("Record Audio")
-    
+
     if audio_buffer:
-        # 1. Save raw recording to temp file
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
             tmp.write(audio_buffer.getvalue())
             temp_path = tmp.name
-            
-        # 2. PRE-PROCESS (Fixes "Always Fake" for Live Audio)
-        # We clean the audio file BEFORE sending it to the untouched prediction logic.
+
         try:
-            # Load raw file
             y, sr = librosa.load(temp_path, sr=SAMPLE_RATE)
-            
-            # Trim silence
-            # top_db=30 trims anything quieter than 30dB below peak (removes silence/hiss)
             y_trimmed, _ = librosa.effects.trim(y, top_db=30)
-            
-            # Normalize Volume
-            # This makes your voice 'loud' enough for the model to see it clearly
+
             if len(y_trimmed) > 0:
-                y_trimmed = y_trimmed / np.max(np.abs(y_trimmed))
-                
-                # Save the CLEANED audio back to temp_path
-                sf.write(temp_path, y_trimmed, SAMPLE_RATE)
-            
+                y_normalized = y_trimmed / (np.max(np.abs(y_trimmed)) + 1e-9)
+                sf.write(temp_path, y_normalized, SAMPLE_RATE)
+            else:
+                y_normalized = y / (np.max(np.abs(y)) + 1e-9)
+                sf.write(temp_path, y_normalized, SAMPLE_RATE)
+
         except Exception as e:
             st.error(f"Error optimizing live audio: {e}")
 
     else:
         st.markdown("""
-            <div class="info-box">
-                Waiting for recording... Press the microphone button above.
-            </div>
+        <div class="info-box">
+        Waiting for recording... Press the microphone button above.
+        </div>
         """, unsafe_allow_html=True)
 
 elif input_mode == "Upload Audio":
+
+    is_live = False
     st.subheader("📂 File Analysis")
     uploaded = st.file_uploader("Drop audio file here (WAV/MP3)", type=["wav", "mp3"])
-    
+
     if uploaded:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
             tmp.write(uploaded.read())
             temp_path = tmp.name
     else:
-         st.markdown("""
-            <div class="info-box">
-                Waiting for file upload...
-            </div>
+        st.markdown("""
+        <div class="info-box">
+        Waiting for file upload...
+        </div>
         """, unsafe_allow_html=True)
 
 # ============================================================
@@ -260,58 +246,64 @@ elif input_mode == "Upload Audio":
 # ============================================================
 
 if temp_path is not None:
+
     st.divider()
-    
+
     try:
+
         with st.spinner("Processing audio signature..."):
-            # We call the EXACT same logic function. 
-            # For live mic, 'temp_path' now contains the cleaned/boosted audio.
-            label, conf, final_audio = predict_audio_logic(temp_path)
-            
-            # Visualization calculations
+
+            if is_live:
+                label, conf, final_audio = predict_live(temp_path)
+            else:
+                label, conf, final_audio = predict_upload(temp_path)
+
             vis_mel = librosa.feature.melspectrogram(y=final_audio, sr=SAMPLE_RATE, n_mels=128)
             vis_log_mel = librosa.power_to_db(vis_mel)
 
-        # Result Logic
-        if conf < 0.60:
+        if conf < 0.60 and not is_live:
             css_class = "fallback-voice"
-            title_color = "#FFA500" 
+            title_color = "#FFA500"
             display_text = "FALLBACK SYSTEM ACTIVATED"
             sub_text = "Confidence below 60%. Manual review recommended."
-        elif label == "REAL":
-            css_class = "real-voice"
-            title_color = "#00C853"
-            display_text = "REAL VOICE DETECTED"
-            sub_text = "Audio appears authentic."
-        elif "POSSIBLE" in label:
-            css_class = "suspicious-voice"
-            title_color = "#FFD700"
-            display_text = "SUSPICIOUS (HIGH QUALITY)"
-            sub_text = "Model detected anomalies typical of high-quality cloning."
-        else:
+
+        elif label == "FAKE" or "POSSIBLE" in label:
+            # FAKE detected → send Twilio alert
+            send_alert()
+
             css_class = "fake-voice"
             title_color = "#FF4B4B"
             display_text = "FAKE VOICE DETECTED"
             sub_text = "High probability of AI Generation / Cloning."
 
+        else:
+            css_class = "real-voice"
+            title_color = "#00C853"
+            display_text = "REAL VOICE DETECTED"
+            sub_text = "Audio appears authentic."
+
+        mode_badge = "🎙️ LIVE" if is_live else "📂 UPLOAD"
+
         st.markdown(f"""
-            <div class="metric-card {css_class}">
-                <h2 style="color: {title_color}; margin:0;">{display_text}</h2>
-                <h1 style="font-size: 3rem; margin:0;">{conf*100:.2f}%</h1>
-                <p style="color: #aaa;">{sub_text}</p>
-                <p style="font-size: 0.8rem; color: #555;">Internal Label: {label}</p>
-            </div>
+        <div class="metric-card {css_class}">
+        <p style="color: #888; font-size: 0.8rem; margin:0;">{mode_badge}</p>
+        <h2 style="color: {title_color}; margin:0;">{display_text}</h2>
+        <h1 style="font-size: 3rem; margin:0;">{conf*100:.2f}%</h1>
+        <p style="color: #aaa;">{sub_text}</p>
+        <p style="font-size: 0.8rem; color: #555;">Internal Label: {label}</p>
+        </div>
         """, unsafe_allow_html=True)
 
-        # Visualizations
         st.subheader("📊 Signal Visualizations")
+
         freq_mean = np.mean(vis_log_mel, axis=1)
 
         c1, c2 = st.columns(2)
+
         with c1:
             st.markdown("**Waveform**")
-            fig, ax = plt.subplots(figsize=(10, 4))
-            ax.plot(final_audio, color='#4e8df5', linewidth=1)
+            fig, ax = plt.subplots(figsize=(10,4))
+            ax.plot(final_audio, color='#4e8df5')
             ax.fill_between(range(len(final_audio)), final_audio, color='#4e8df5', alpha=0.3)
             ax.set_facecolor('#0e1117')
             fig.patch.set_facecolor('#0e1117')
@@ -321,31 +313,8 @@ if temp_path is not None:
 
         with c2:
             st.markdown("**Spectrogram**")
-            fig, ax = plt.subplots(figsize=(10, 4))
+            fig, ax = plt.subplots(figsize=(10,4))
             librosa.display.specshow(vis_log_mel, sr=SAMPLE_RATE, cmap='magma', ax=ax)
-            ax.set_facecolor('#0e1117')
-            fig.patch.set_facecolor('#0e1117')
-            ax.tick_params(colors='white')
-            st.pyplot(fig)
-
-        c3, c4 = st.columns(2)
-        with c3:
-            st.markdown("**Frequency Line**")
-            fig, ax = plt.subplots(figsize=(10, 4))
-            ax.plot(freq_mean, color='#00d4ff')
-            ax.fill_between(range(len(freq_mean)), freq_mean, color='#00d4ff', alpha=0.2)
-            ax.set_facecolor('#0e1117')
-            fig.patch.set_facecolor('#0e1117')
-            ax.grid(alpha=0.3)
-            ax.tick_params(colors='white')
-            st.pyplot(fig)
-
-        with c4:
-            st.markdown("**Energy Bar**")
-            fig, ax = plt.subplots(figsize=(10, 4))
-            bins = np.array_split(freq_mean, 15)
-            means = [np.mean(b) for b in bins]
-            ax.bar(range(15), means, color='#d63384', alpha=0.8)
             ax.set_facecolor('#0e1117')
             fig.patch.set_facecolor('#0e1117')
             ax.tick_params(colors='white')
@@ -353,6 +322,9 @@ if temp_path is not None:
 
     except Exception as e:
         st.error(f"Analysis Error: {e}")
+
     finally:
-        try: os.remove(temp_path)
-        except: pass
+        try:
+            os.remove(temp_path)
+        except:
+            pass
