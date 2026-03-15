@@ -1,108 +1,167 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-main: #0a0c10;
+            --bg-card: #1c2128;
+            --text-main: #e6edf3;
+            --text-muted: #7d8590;
+            --border-color: #30363d;
+            --accent-blue: #2f81f7;
+            --btn-red: #da3633;
+            --btn-red-hover: #f85149;
+            --btn-green: #238636;
+            --btn-green-hover: #2ea043;
+            --btn-blue: #1f6feb;
+            --btn-blue-hover: #388bfd;
+        }
 
-<title>Security Dashboard</title>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            margin: 0;
+            -webkit-font-smoothing: antialiased;
+        }
 
-<style>
+        .navbar {
+            background-color: var(--bg-card);
+            padding: 16px 32px;
+            font-size: 20px;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
 
-body{
-    font-family: Arial;
-    background:#0e1117;
-    color:white;
-    margin:0;
-}
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 24px;
+        }
 
-.navbar{
-    background:#161b22;
-    padding:15px;
-    font-size:20px;
-}
+        .card {
+            background-color: var(--bg-card);
+            padding: 32px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border-color);
+            border-left: 6px solid var(--accent-blue);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
 
-.container{
-    padding:40px;
-}
+        .card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
 
-.card{
-    background:#161b22;
-    padding:30px;
-    border-radius:10px;
-    margin-bottom:25px;
-    border-left:6px solid #4e8df5;
-}
+        h2 {
+            margin-top: 0;
+            margin-bottom: 8px;
+            font-size: 22px;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+        }
 
-button{
-    padding:12px 20px;
-    border:none;
-    border-radius:6px;
-    background:#ff4b4b;
-    color:white;
-    font-size:16px;
-    cursor:pointer;
-    margin-right:10px;
-}
+        p {
+            color: var(--text-muted);
+            margin-top: 0;
+            margin-bottom: 24px;
+            font-size: 15px;
+            line-height: 1.5;
+        }
 
-button:hover{
-    background:#ff2c2c;
-}
+        .button-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
 
-.config-btn{
-    background:#4e8df5;
-}
+        button {
+            padding: 10px 18px;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 6px;
+            background-color: var(--btn-red);
+            color: white;
+            font-size: 14px;
+            font-weight: 500;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
 
-.config-btn:hover{
-    background:#6fa5ff;
-}
+        button:hover {
+            background-color: var(--btn-red-hover);
+        }
 
-.streamlit-btn{
-    background:#00c853;
-}
+        button:active {
+            transform: scale(0.97);
+        }
 
-.streamlit-btn:hover{
-    background:#00e676;
-}
+        .streamlit-btn {
+            background-color: var(--btn-green);
+        }
 
-</style>
+        .streamlit-btn:hover {
+            background-color: var(--btn-green-hover);
+        }
 
+        .config-btn {
+            background-color: var(--btn-blue);
+        }
+
+        .config-btn:hover {
+            background-color: var(--btn-blue-hover);
+        }
+    </style>
 </head>
-
 <body>
 
-<div class="navbar">
-🔐 Deepfake Guard Dashboard
-</div>
+    <div class="navbar">
+        <span>🔐</span> Deepfake Guard Dashboard
+    </div>
 
-<div class="container">
+    <div class="container">
 
-<div class="card">
+        <div class="card">
+            <h2>Attack Simulation</h2>
+            <p>Trigger a controlled deepfake attack to test system response.</p>
+            <div class="button-group">
+                <button onclick="location.href='/simulate_attack'">
+                    Simulate Deepfake Attack
+                </button>
+            </div>
+        </div>
 
-<h2>Voice Security System</h2>
+        <div class="card">
+            <h2>Voice Security System</h2>
+            <p>Monitor ongoing deepfake attacks and view real-time security alerts.</p>
+            <div class="button-group">
+                <button class="streamlit-btn" onclick="window.open('http://localhost:8501','_blank')">
+                    Open Voice Detection System
+                </button>
+            </div>
+        </div>
 
-<p>Monitor deepfake attacks and security alerts.</p>
+        <div class="card">
+            <h2>Door Configuration</h2>
+            <p>Configure protected locations and manage access controls.</p>
+            <div class="button-group">
+                <button class="config-btn" onclick="location.href='/config'">
+                    Open Configuration
+                </button>
+            </div>
+        </div>
 
-<button onclick="location.href='/simulate_attack'">
-Simulate Deepfake Attack
-</button>
-
-<button class="streamlit-btn" onclick="window.open('http://localhost:8501','_blank')">
-Open Voice Detection System
-</button>
-
-</div>
-
-<div class="card">
-
-<h2>Door Configuration</h2>
-
-<p>Configure protected locations.</p>
-
-<button class="config-btn" onclick="location.href='/config'">
-Open Configuration
-</button>
-
-</div>
-
-</div>
+    </div>
 
 </body>
 </html>
